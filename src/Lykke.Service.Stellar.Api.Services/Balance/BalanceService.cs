@@ -4,15 +4,19 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Common.Log;
 using JetBrains.Annotations;
+using Lykke.Common.Log;
 using Lykke.Service.Stellar.Api.Core;
 using Lykke.Service.Stellar.Api.Core.Domain;
 using Lykke.Service.Stellar.Api.Core.Domain.Balance;
 using Lykke.Service.Stellar.Api.Core.Domain.Observation;
 using Lykke.Service.Stellar.Api.Core.Exceptions;
 using Lykke.Service.Stellar.Api.Core.Services;
+using Lykke.Service.Stellar.Api.Core.Utils;
 using StellarBase;
 using StellarBase.Generated;
+using StellarSdk.Model;
 
 namespace Lykke.Service.Stellar.Api.Services.Balance
 {
@@ -27,6 +31,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
 
         private readonly string _depositBaseAddress;
         private readonly string[] _explorerUrlFormats;
+        private readonly ILog _log;
 
         [UsedImplicitly]
         public BalanceService(IHorizonService horizonService,
@@ -34,7 +39,8 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                               IObservationRepository<BalanceObservation> observationRepository, 
                               IWalletBalanceRepository walletBalanceRepository,
                               string depositBaseAddress,
-                              string[] explorerUrlFormats)
+                              string[] explorerUrlFormats,
+                              ILogFactory log)
         {
             _horizonService = horizonService;
             _keyValueStoreRepository = keyValueStoreRepository;
@@ -42,6 +48,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
             _walletBalanceRepository = walletBalanceRepository;
             _depositBaseAddress = depositBaseAddress;
             _explorerUrlFormats = explorerUrlFormats;
+            _log = log.CreateLog(this);
         }
 
         public bool IsAddressValid(string address)
@@ -221,7 +228,6 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
         private async Task<(int Count, string Cursor)> ProcessDeposits(string cursor)
         {
             var transactions = await _horizonService.GetTransactions(_depositBaseAddress, StellarSdkConstants.OrderAsc, cursor);
-
             var count = 0;
             cursor = null;
             foreach (var transaction in transactions)
@@ -289,6 +295,16 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                         }
 
                         var addressWithExtension = $"{toAddress}{Constants.PublicAddressExtension.Separator}{memo.ToLower()}";
+                        if (!ForbiddenCharacterAzureStorageUtils.IsValidRowKey(memo))
+                        {
+                            await _log.WriteErrorAsync(nameof(BalanceService),
+                                nameof(ProcessDeposits), 
+                                addressWithExtension, 
+                                new Exception("Possible cashin skipped. It has forbiddden characters in memo."));
+
+                            continue;
+                        }
+
                         var observation = await _observationRepository.GetAsync(addressWithExtension);
                         if (observation == null)
                         {
