@@ -37,7 +37,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
         [UsedImplicitly]
         public BalanceService(IHorizonService horizonService,
                               IKeyValueStoreRepository keyValueStoreRepository,
-                              IObservationRepository<BalanceObservation> observationRepository, 
+                              IObservationRepository<BalanceObservation> observationRepository,
                               IWalletBalanceRepository walletBalanceRepository,
                               string depositBaseAddress,
                               string[] explorerUrlFormats,
@@ -63,7 +63,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
         {
             hasExtension = false;
 
-            if (string.IsNullOrWhiteSpace(address)) 
+            if (string.IsNullOrWhiteSpace(address))
             {
                 return false;
             }
@@ -85,9 +85,9 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
 
             if (parts.Length > 1)
             {
-                if (!IsValidMemo(parts[1])) 
+                if (!IsValidMemo(parts[1]))
                 {
-                    return false;   
+                    return false;
                 }
 
                 hasExtension = true;
@@ -98,9 +98,9 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
 
         private bool IsValidMemo(string memo)
         {
-            if (string.IsNullOrWhiteSpace(memo)) 
+            if (string.IsNullOrWhiteSpace(memo))
             {
-                return false; 
+                return false;
             }
 
             var length = Encoding.UTF8.GetByteCount(memo);
@@ -189,9 +189,23 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
             await _walletBalanceRepository.DeleteIfExistAsync(_blockchainAssetsService.GetNativeAsset().Id, address);
         }
 
-        public async Task<(List<WalletBalance> Wallets, string ContinuationToken)> GetBalancesAsync(int take, string continuationToken)
+        public async Task<(List<WalletBalance> Wallets, string ContinuationToken)> 
+            GetBalancesAsync(int take, string continuationToken)
         {
-            return await _walletBalanceRepository.GetAllAsync(take, continuationToken);
+            var ledger = await _horizonService.GetLatestLedger();
+            var currentLedger = ledger.Sequence * 10;
+            var balances = await _walletBalanceRepository.GetAllAsync(take, continuationToken);
+
+            if (balances.Entities != null && 
+                balances.Entities.Count != 0)
+            {
+                foreach (var balance in balances.Entities)
+                {
+                    balance.Ledger = currentLedger;
+                }
+            }
+
+            return balances;
         }
 
         public List<string> GetExplorerUrls(string address)
@@ -264,35 +278,35 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                         switch (operationType)
                         {
                             case OperationType.OperationTypeEnum.PAYMENT:
-                            {
-                                var op = operation.Body.PaymentOp;
-                                if (op.Asset.Discriminant.InnerValue == AssetType.AssetTypeEnum.ASSET_TYPE_NATIVE)
                                 {
+                                    var op = operation.Body.PaymentOp;
+                                    if (op.Asset.Discriminant.InnerValue == AssetType.AssetTypeEnum.ASSET_TYPE_NATIVE)
+                                    {
+                                        var keyPair = KeyPair.FromXdrPublicKey(op.Destination.InnerValue);
+                                        toAddress = keyPair.Address;
+                                        amount = op.Amount.InnerValue;
+                                    }
+                                    break;
+                                }
+                            case OperationType.OperationTypeEnum.ACCOUNT_MERGE:
+                                {
+                                    var op = operation.Body;
                                     var keyPair = KeyPair.FromXdrPublicKey(op.Destination.InnerValue);
                                     toAddress = keyPair.Address;
-                                    amount = op.Amount.InnerValue;
+                                    amount = _horizonService.GetAccountMergeAmount(transaction.ResultXdr, i);
+                                    break;
                                 }
-                                break;
-                            }
-                            case OperationType.OperationTypeEnum.ACCOUNT_MERGE:
-                            {
-                                var op = operation.Body;
-                                var keyPair = KeyPair.FromXdrPublicKey(op.Destination.InnerValue);
-                                toAddress = keyPair.Address;
-                                amount = _horizonService.GetAccountMergeAmount(transaction.ResultXdr, i);
-                                break;
-                            }
                             case OperationType.OperationTypeEnum.PATH_PAYMENT:
-                            {
-                                var op = operation.Body.PathPaymentOp;
-                                if (op.DestAsset.Discriminant.InnerValue == AssetType.AssetTypeEnum.ASSET_TYPE_NATIVE)
                                 {
-                                   var keyPair = KeyPair.FromXdrPublicKey(op.Destination.InnerValue);
-                                   toAddress = keyPair.Address;
-                                   amount = op.DestAmount.InnerValue;
+                                    var op = operation.Body.PathPaymentOp;
+                                    if (op.DestAsset.Discriminant.InnerValue == AssetType.AssetTypeEnum.ASSET_TYPE_NATIVE)
+                                    {
+                                        var keyPair = KeyPair.FromXdrPublicKey(op.Destination.InnerValue);
+                                        toAddress = keyPair.Address;
+                                        amount = op.DestAmount.InnerValue;
+                                    }
+                                    break;
                                 }
-                                break;
-                            }
                             default:
                                 continue;
                         }
@@ -301,8 +315,8 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                         if (!ForbiddenCharacterAzureStorageUtils.IsValidRowKey(memo))
                         {
                             await _log.WriteErrorAsync(nameof(BalanceService),
-                                nameof(ProcessDeposits), 
-                                addressWithExtension, 
+                                nameof(ProcessDeposits),
+                                addressWithExtension,
                                 new Exception("Possible cashin skipped. It has forbiddden characters in memo."));
 
                             continue;
@@ -311,7 +325,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                         var observation = await _observationRepository.GetAsync(addressWithExtension);
                         if (observation == null)
                         {
-                            continue;    
+                            continue;
                         }
 
                         var assetId = _blockchainAssetsService.GetNativeAsset().Id;
