@@ -245,6 +245,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
             var transactions = await _horizonService.GetTransactions(_depositBaseAddress, StellarSdkConstants.OrderAsc, cursor);
             var count = 0;
             var walletsToRefresh = new HashSet<(string assetId, string address)>();
+            var asset = Core.Domain.Asset.Stellar;
             cursor = null;
             foreach (var transaction in transactions)
             {
@@ -281,7 +282,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                                 if (payment.AssetType == "native")
                                 {
                                     toAddress = payment.To.Address;
-                                    amount = long.Parse(payment.Amount);
+                                    amount = asset.ParseDecimal(payment.Amount);
                                 }
                                 break;
 
@@ -296,7 +297,7 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                                 if (pathPayment.AssetType == "native")
                                 {
                                     toAddress = pathPayment.To.Address;
-                                    amount = long.Parse(pathPayment.Amount);
+                                    amount = asset.ParseDecimal(pathPayment.Amount);
                                 }
                                 break;
 
@@ -321,9 +322,8 @@ namespace Lykke.Service.Stellar.Api.Services.Balance
                             continue;
                         }
 
-                        var assetId = Core.Domain.Asset.Stellar.Id;
-                        await _walletBalanceRepository.RecordOperationAsync(assetId, addressWithExtension, transaction.Ledger * 10, op.Id, transaction.Hash, amount);
-                        walletsToRefresh.Add((assetId, addressWithExtension));
+                        await _walletBalanceRepository.RecordOperationAsync(asset.Id, addressWithExtension, transaction.Ledger * 10, op.Id, transaction.Hash, amount);
+                        walletsToRefresh.Add((asset.Id, addressWithExtension));
                     }
                 }
                 catch (Exception ex)
