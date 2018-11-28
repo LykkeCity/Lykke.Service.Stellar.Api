@@ -139,13 +139,13 @@ namespace Lykke.Service.Stellar.Api.Controllers
             }
 
             var broadcast = await _transactionService.GetTxBroadcastAsync(request.OperationId);
-            if (broadcast != null)
+            if (broadcast != null && broadcast.State != null)
             {
                 return new StatusCodeResult(StatusCodes.Status409Conflict);
             }
             try
             {
-                await _transactionService.BroadcastTxAsync(request.OperationId, request.SignedTransaction);
+                await _transactionService.BroadcastTxAsync(request.OperationId, request.SignedTransaction, broadcast);
             }
             catch (BusinessException ex)
             {
@@ -190,7 +190,7 @@ namespace Lykke.Service.Stellar.Api.Controllers
             return Ok(new BroadcastedSingleTransactionResponse
             {
                 OperationId = broadcast.OperationId,
-                State = broadcast.State.ToBroadcastedTransactionState(),
+                State = broadcast.State?.ToBroadcastedTransactionState() ?? BroadcastedTransactionState.InProgress,
                 Timestamp = broadcast.CreatedAt,
                 Amount = broadcast.Amount.ToString(),
                 Fee = broadcast.Fee.ToString(),
