@@ -18,6 +18,7 @@ using Lykke.Service.Stellar.Api.Core.Domain;
 using Lykke.Service.Stellar.Api.Core.Domain.Observation;
 using Newtonsoft.Json;
 using Common.Log;
+using Lykke.Common.Chaos;
 
 namespace Lykke.Service.Stellar.Api.Services.Transaction
 {
@@ -33,6 +34,7 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
         private readonly ITxBuildRepository _buildRepository;
         private readonly TimeSpan _transactionExpirationTime;
         private readonly ILog _log;
+        private readonly IChaosKitty _chaos;
 
         [UsedImplicitly]
         public TransactionService(IBalanceService balanceService,
@@ -42,7 +44,8 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
                                   ITxBroadcastRepository broadcastRepository,
                                   ITxBuildRepository buildRepository,
                                   TimeSpan transactionExpirationTime,
-                                  ILogFactory logFactory)
+                                  ILogFactory logFactory,
+                                  IChaosKitty chaosKitty)
         {
             _balanceService = balanceService;
             _horizonService = horizonService;
@@ -52,6 +55,7 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
             _buildRepository = buildRepository;
             _transactionExpirationTime = transactionExpirationTime;
             _log = logFactory.CreateLog(this);
+            _chaos = chaosKitty;
         }
 
         public async Task<TxBroadcast> GetTxBroadcastAsync(Guid operationId)
@@ -65,6 +69,8 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
             var xdr = Convert.FromBase64String(xdrBase64);
             var reader = new ByteReader(xdr);
             var txEnvelope = TransactionEnvelope.Decode(reader);
+
+            _chaos.Meow(nameof(BroadcastTxAsync));
 
             if (!await ProcessDwToHwTransaction(operationId, txEnvelope.Tx, broadcast))
             {
@@ -116,6 +122,17 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
                     throw new BusinessException($"Broadcasting transaction failed. operationId={operationId}, message={broadcast.Error}", ex, broadcast.ErrorCode.ToString());
                 }
 
+                _chaos.Meow(nameof(BroadcastTxAsync));
+
+                var observation = new BroadcastObservation
+                {
+                    OperationId = operationId
+                };
+
+                await _observationRepository.InsertOrReplaceAsync(observation);
+
+                _chaos.Meow(nameof(BroadcastTxAsync));
+
                 broadcast = new TxBroadcast
                 {
                     OperationId = operationId,
@@ -126,13 +143,6 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
                 };
 
                 await _broadcastRepository.InsertOrReplaceAsync(broadcast);
-
-                var observation = new BroadcastObservation
-                {
-                    OperationId = operationId
-                };
-
-                await _observationRepository.InsertOrReplaceAsync(observation);
             }
         }
 
@@ -144,6 +154,8 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
 
             var toKeyPair = KeyPair.FromXdrPublicKey(tx.Operations[0].Body.PaymentOp.Destination.InnerValue);
             if (!_balanceService.IsDepositBaseAddress(toKeyPair.Address)) return false;
+
+            _chaos.Meow(nameof(ProcessDwToHwTransaction));
 
             var fromAddress = $"{fromKeyPair.Address}{Constants.PublicAddressExtension.Separator}{tx.Memo.Text}";
             var amount = tx.Operations[0].Body.PaymentOp.Amount.InnerValue;
@@ -165,6 +177,8 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
             // save without state to prevent changing of tx hash
             await _broadcastRepository.InsertOrReplaceAsync(broadcast);
 
+            _chaos.Meow(nameof(ProcessDwToHwTransaction));
+
             var assetId = Core.Domain.Asset.Stellar.Id;
             var balance = await _balanceRepository.GetAsync(assetId, fromAddress);
             if (balance.Balance < amount)
@@ -179,6 +193,8 @@ namespace Lykke.Service.Stellar.Api.Services.Transaction
                 await _balanceRepository.RefreshBalance(assetId, fromAddress);
                 broadcast.State = TxBroadcastState.Completed;
             }
+
+            _chaos.Meow(nameof(ProcessDwToHwTransaction));
 
             // update state
             await _broadcastRepository.InsertOrReplaceAsync(broadcast);

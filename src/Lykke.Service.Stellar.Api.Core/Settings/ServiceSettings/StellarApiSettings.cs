@@ -1,4 +1,5 @@
 ﻿using System;
+using Lykke.Common.Chaos;
 using Lykke.SettingsReader.Attributes;
 
 namespace Lykke.Service.Stellar.Api.Core.Settings.ServiceSettings
@@ -17,5 +18,8 @@ namespace Lykke.Service.Stellar.Api.Core.Settings.ServiceSettings
         public string DepositBaseAddress { get; set; }
 
         public string[] ExplorerUrlFormats { get; set; }
+
+        [Optional]
+        public ChaosSettings ChaosSettings { get; set; }
     }
 }
